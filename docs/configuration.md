@@ -130,14 +130,16 @@ With it set:
   harness change. Any model, provider or thinking change, on the agent's card
   or in Settings, takes it off Recommended.
 
-The mark stays in this computer's agent state and is never written to the
-agent's synced `buzz.agent.settings` (kind 45010), because older app versions
-reject a settings key they don't know. Synced settings carry the agent's model,
-provider and thinking level blank or not at all. A synced revision that names
-any of them, such as one restored from History, takes the agent off
-Recommended on this computer, and its next Settings save there drops the mark.
-Until then, a later synced revision with blank model settings would put it
-back on Recommended. Which harness an agent runs on is the `runtime` tag of
+On a config channel, the mark syncs with the agent's settings: its
+`buzz.agent.settings` revision (kind 45010) carries `"preset": "recommended"`
+beside `settings`, not inside it, and leaves it out otherwise. Versions without
+this feature ignore it there and keep it when they edit (NIP-AP "Editing"), so
+their strict settings check never rejects it. The synced revision decides on
+every device: one without the mark takes the agent off Recommended, and one
+that names a model, provider or thinking level keeps it off even with the
+mark. Synced settings carry the agent's own model settings blank or not at all
+while it is on Recommended. Without a config channel, the mark is kept in the
+agent's local settings. Which harness an agent runs on is the `runtime` tag of
 its kind 30177 record.
 
 ## Builderlab URL build input
