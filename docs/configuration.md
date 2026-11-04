@@ -13,6 +13,7 @@ Build defaults are readable binary data, **never secret storage**.
 | `BUZZ_BUILDERLAB_APPS_DOMAIN` | Shared frontend/native build: exact Apps cookie domain paired with the login origin for native viewer SSO; no runtime override. |
 | `BUZZ_DEFAULT_COMMUNITY_URL` | Packaged frontend build: secure relay origin to select once, after identity setup, only when this viewer has no saved community record. Saved choices, including Personal space, always win. Unset in OSS builds. |
 | `BUZZ_DATABRICKS_HOST` | Frontend build and dev server: `https://` Databricks workspace URL passed as `DATABRICKS_HOST` to every bundled `goose-acp`, which then prefers it to the host in goose's config. Unset in OSS builds. See [Databricks host](#databricks-host). |
+| `BUZZ_RECOMMENDED_AGENT` | Frontend build and dev server: JSON array of candidates for a recommended agent setup, best first, behind **Automatic (Recommended)** for new agents. Unset in OSS builds, which don't offer the choice. See [Recommended agent](#recommended-agent). |
 | `BUZZ_RELAY_URL` | Live development broker's default community, not an agent relay override or a packaged default. |
 | `BUZZ_BUILD_AUTO_CONNECT_DEFAULT_RELAY` | Presence-only alias for fresh-viewer community selection in live development only. Saved viewer choice wins. |
 | `BUZZ_BUILD_FEDERATED_IDENTITY_CONFIG` | Native build: federated identity authority, adapter prefix and community hosts. See below. |
@@ -81,6 +82,58 @@ plugin starts receives it as `DATABRICKS_HOST`, so goose reports Databricks as
 configured and ignores a host saved in goose's config. Only the host is set:
 the model, thinking level and sign-in stay goose's own. Leave it unset for OSS
 builds.
+
+## Recommended agent
+
+Packagers can offer a recommended agent setup, which picks a harness, model and
+thinking level for new agents and keeps them current. `BUZZ_RECOMMENDED_AGENT`
+is a JSON array of candidates, best first; a harness may have several. Each
+one has `harness` (`codex` or `goose`), `model`, `effort`, `label` (the model's
+display name) and, for goose only, `provider`. For example, with placeholder
+values:
+
+```sh
+BUZZ_RECOMMENDED_AGENT='[{"harness":"codex","model":"model-a","effort":"high","label":"Model A"},{"harness":"goose","provider":"example","model":"model-b","effort":"high","label":"Model B"}]' bin/pnpm tauri build
+```
+
+The frontend reads it from repository-root `.env.local` or the process
+environment (process wins) and compiles it in; invalid values fail the build.
+Set it in `.env.local` to try the feature in `just web` or `just desktop`.
+Leave it unset for OSS builds: the create form then works as before.
+
+With it set:
+
+- **Create agent** gains **AI settings**: **Automatic (Recommended)**, the
+  default, or **Choose manually**, which shows today's harness and model
+  pickers. Automatic uses the first candidate whose harness is installed here
+  and ready and whose model it lists now (Codex: installed, signed in, model
+  in its catalog; goose: provider set up, model in its live list with the
+  candidate's thinking level). Each check may take up to 8 seconds; one that
+  fails or takes longer skips that candidate. Codex is not offered on Windows.
+  When nothing is ready, AI settings is hidden and the form is as before.
+  **Choose manually** works while the check runs.
+- The agent saves only `preset: "recommended"` in its config, with its own
+  model, provider and thinking level cleared. Its harness is never changed
+  for it.
+- At run time it uses the first candidate for its own harness whose model is
+  still offered, checked the same way once per app launch. If none is, it
+  runs on the harness's own default instead of failing; when a failed check
+  caused that, goose checks again a minute later. A later build's
+  recommendation reaches it the same way.
+- Settings' **Model settings** shows what it runs on, or that it fell back to
+  the harness default. Any model, provider or thinking change, on the agent's
+  card or in Settings, takes it off Recommended; **Model settings** puts it
+  back.
+
+The mark stays in this computer's agent state and is never written to the
+agent's synced `buzz.agent.settings` (kind 45010), because older app versions
+reject a settings key they don't know. Synced settings carry the agent's model,
+provider and thinking level blank or not at all. A synced revision that names
+any of them, such as one restored from History, takes the agent off
+Recommended on this computer, and its next Settings save there drops the mark.
+Until then, a later synced revision with blank model settings would put it
+back on Recommended. Which harness an agent runs on is the `runtime` tag of
+its kind 30177 record.
 
 ## Builderlab URL build input
 

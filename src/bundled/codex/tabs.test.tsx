@@ -1799,3 +1799,106 @@ it("shows the recent empty state when only the current runtime session exists", 
     within(opened).getByText("git status").closest("details"),
   ).not.toHaveAttribute("open");
 });
+
+describe("Recommended", () => {
+  // A synthetic candidate the fake Codex offers.
+  const candidate = {
+    harness: "codex",
+    model: "model-b",
+    effort: "medium",
+    label: "Model B",
+  };
+  beforeEach(() =>
+    vi.stubEnv("VITE_BUZZ_RECOMMENDED_AGENT", JSON.stringify([candidate])),
+  );
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("recommends a candidate only when Codex is signed in and offers its model", async () => {
+    await expect(fixture().provider.recommends(candidate)).resolves.toBe(true);
+    await expect(
+      fixture().provider.recommends({ ...candidate, model: "model-z" }),
+    ).resolves.toBe(false);
+    await expect(
+      fixture({ signedIn: false }).provider.recommends(candidate),
+    ).resolves.toBe(false);
+    await expect(
+      fixture({ installed: false }).provider.recommends(candidate),
+    ).resolves.toBe(false);
+  });
+
+  it("runs an agent on Recommended on the first candidate its catalog offers", async () => {
+    vi.stubEnv(
+      "VITE_BUZZ_RECOMMENDED_AGENT",
+      JSON.stringify([{ ...candidate, model: "model-z" }, candidate]),
+    );
+    const f = fixture();
+    await f.provider.saveDefaults({ model: "model-a", effort: "low" });
+    const saved = { ...defaults, preset: "recommended" as const };
+    // Until the catalog is read it runs on the device's default.
+    expect(f.provider.recommended()).toBeUndefined();
+    await f.provider.check();
+    // Model Z isn't offered, so the next candidate, over device defaults.
+    expect(f.provider.recommended()).toEqual(candidate);
+    // Kept for the launch: a later failed check doesn't move it to the default.
+    f.disk.signedIn = false;
+    await f.provider.check();
+    expect(f.provider.snapshot().readiness).toBe("attention");
+    expect(f.provider.recommended()).toEqual(candidate);
+    f.disk.signedIn = true;
+    expect(f.provider.resolve(saved)).toMatchObject({
+      model: "model-b",
+      effort: "medium",
+      preset: "recommended",
+    });
+    expect(f.provider.resolve(defaults).model).toBe("model-a");
+  });
+
+  it("runs on Codex's own default when no candidate is offered", async () => {
+    vi.stubEnv(
+      "VITE_BUZZ_RECOMMENDED_AGENT",
+      JSON.stringify([{ ...candidate, model: "model-z" }]),
+    );
+    const f = fixture();
+    await f.provider.saveDefaults({ model: "model-a", effort: "" });
+    await f.provider.check();
+    expect(f.provider.recommended()).toBeNull();
+    expect(
+      f.provider.resolve({ ...defaults, preset: "recommended" }).model,
+    ).toBe("model-a");
+    // A catalog that can't be read is the same.
+    const signedOut = fixture({ signedIn: false });
+    await signedOut.provider.check();
+    expect(signedOut.provider.recommended()).toBeNull();
+  });
+
+  it("drops Recommended for a manual choice in Settings", async () => {
+    const f = fixture();
+    const save = vi.fn(async () => {});
+    const { SettingsTab } = f.tabs;
+    render(
+      <SettingsTab
+        {...f.props({ ...defaults, preset: "recommended" }, save)}
+      />,
+    );
+    const user = userEvent.setup();
+    const choice = screen.getByRole("combobox", { name: "Model settings" });
+    expect(choice).toHaveTextContent("Automatic (Recommended)");
+    expect(
+      await screen.findByText(
+        "Currently Codex · Model B · Medium thinking. Buzz keeps it up to date.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "Thinking" }),
+    ).not.toBeInTheDocument();
+    await user.click(choice);
+    await user.click(await screen.findByRole("option", { name: "Custom" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    expect(save).toHaveBeenCalledWith({
+      ...defaults,
+      model: "model-b",
+      effort: "medium",
+    });
+  });
+});

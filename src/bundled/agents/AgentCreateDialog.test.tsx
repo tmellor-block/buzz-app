@@ -12,7 +12,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CreateModelChoices } from "../../features/agents/CreateModelChoices";
 import { AgentInstructions } from "../../features/agents/AgentInstructions";
 import { agentAvatars } from "../../features/agents/avatar-packs";
@@ -950,4 +950,218 @@ it("preserves the existing avatar and requested name when saving a proposed upda
   );
   expect(agents.create).not.toHaveBeenCalled();
   expect(onCreated).not.toHaveBeenCalled();
+});
+
+describe("Automatic (Recommended)", () => {
+  // Synthetic candidates and harnesses; real values come only from a build.
+  const candidates = [
+    { harness: "codex", model: "model-a", effort: "high", label: "Model A" },
+    {
+      harness: "goose",
+      provider: "provider-b",
+      model: "model-b",
+      effort: "high",
+      label: "Model B",
+    },
+  ];
+  const harness = (
+    id: string,
+    title: string,
+    ready: (candidate: { model: string }) => boolean | Promise<boolean>,
+  ) =>
+    ({
+      ...notes,
+      key: `test/${id}`,
+      id,
+      title,
+      recommends: vi.fn(async (candidate: { model: string }) =>
+        ready(candidate),
+      ),
+      CreateModel: () => <p>Model picker</p>,
+    }) as unknown as RegisteredAgentType;
+  let codexReady = true;
+  const codex = harness("codex", "Codex", () => codexReady);
+  const goose = harness("goose", "Goose", () => true);
+  beforeEach(() => {
+    codexReady = true;
+    vi.stubEnv("VITE_BUZZ_RECOMMENDED_AGENT", JSON.stringify(candidates));
+  });
+  afterEach(() => vi.unstubAllEnvs());
+  const automatic = (dialog: HTMLElement) =>
+    within(dialog).getByRole("radio", { name: "Automatic (Recommended)" });
+  const manual = (dialog: HTMLElement) =>
+    within(dialog).getByRole("radio", { name: "Choose manually" });
+  const harnessSelect = (dialog: HTMLElement) =>
+    within(dialog).getByRole("combobox", { name: "Harness" });
+
+  it("starts on Automatic, resolved to the first ready candidate, and creates a pointer", async () => {
+    const { agents, dialog, user } = setup([echo, goose, codex]);
+    expect(within(dialog).getByText("AI settings")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/general-purpose harness and model/),
+    ).toBeInTheDocument();
+    expect(automatic(dialog)).toBeChecked();
+    // Creation waits for the pick.
+    expect(createButton()).toBeDisabled();
+    expect(within(dialog).getByText("Checking this computer…")).toBeVisible();
+    expect(
+      await within(dialog).findByText(
+        "Currently: Codex · Model A · High thinking",
+      ),
+    ).toBeInTheDocument();
+    // Automatic owns the harness and model; their rows wait for manual.
+    expect(
+      within(dialog).queryByRole("combobox", { name: "Harness" }),
+    ).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("Model picker")).not.toBeInTheDocument();
+    await user.type(within(dialog).getByLabelText("Name"), "Agent A");
+    await user.click(createButton());
+    expect(agents.create).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        type: "test/codex",
+        name: "Agent A",
+        // The values are not copied: runs read the current candidate.
+        config: {
+          notes: "start",
+          instructions: "Be brief.",
+          preset: "recommended",
+        },
+      }),
+    );
+  });
+
+  it("falls back to goose and says why when Codex can't run a candidate", async () => {
+    codexReady = false;
+    const { agents, dialog, user } = setup([echo, goose, codex]);
+    expect(
+      await within(dialog).findByText(
+        "Currently: Goose · Model B · High thinking",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(
+        "Codex can’t run a recommended model on this computer, so Buzz is using Goose.",
+      ),
+    ).toBeInTheDocument();
+    await user.type(within(dialog).getByLabelText("Name"), "Agent A");
+    await user.click(createButton());
+    expect(agents.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "test/goose",
+        config: expect.objectContaining({ preset: "recommended" }),
+      }),
+    );
+  });
+
+  it("uses goose without a note where Codex isn't offered, as on Windows", async () => {
+    const { dialog } = setup([echo, goose]);
+    expect(
+      await within(dialog).findByText(
+        "Currently: Goose · Model B · High thinking",
+      ),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByText(/can’t run/)).not.toBeInTheDocument();
+  });
+
+  it("takes a harness's next candidate when its first model isn't offered", async () => {
+    vi.stubEnv(
+      "VITE_BUZZ_RECOMMENDED_AGENT",
+      JSON.stringify([
+        candidates[0],
+        { ...candidates[0], model: "model-c", label: "Model C" },
+        candidates[1],
+      ]),
+    );
+    const picky = harness("codex", "Codex", ({ model }) => model === "model-c");
+    const { dialog } = setup([echo, goose, picky]);
+    expect(
+      await within(dialog).findByText(
+        "Currently: Codex · Model C · High thinking",
+      ),
+    ).toBeInTheDocument();
+    // Codex is the pick, so it isn't named as skipped.
+    expect(within(dialog).queryByText(/can’t run/)).not.toBeInTheDocument();
+  });
+
+  it("creates with today's pickers when chosen manually", async () => {
+    const { agents, dialog, user } = setup([echo, goose, codex]);
+    await within(dialog).findByText(
+      "Currently: Codex · Model A · High thinking",
+    );
+    await user.click(manual(dialog));
+    expect(manual(dialog)).toBeChecked();
+    // The resolved harness stays selected, with its own pickers.
+    expect(harnessSelect(dialog)).toHaveTextContent("Codex");
+    expect(within(dialog).getByText("Model picker")).toBeInTheDocument();
+    await user.type(within(dialog).getByLabelText("Name"), "Agent A");
+    await user.click(createButton());
+    expect(agents.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "test/codex",
+        config: { notes: "start", instructions: "Be brief." },
+      }),
+    );
+  });
+
+  it("lets the owner choose manually while the pick is still running, even with one harness", async () => {
+    let finish = (_ready: boolean) => {};
+    const slow = harness(
+      "codex",
+      "Codex",
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    try {
+      const { agents, dialog, user } = setup([slow]);
+      expect(createButton()).toBeDisabled();
+      await user.click(manual(dialog));
+      expect(createButton()).toBeEnabled();
+      // The pick finishing later leaves the owner's choice alone.
+      await act(async () => finish(true));
+      expect(manual(dialog)).toBeChecked();
+      await user.type(within(dialog).getByLabelText("Name"), "Agent A");
+      await user.click(createButton());
+      expect(agents.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "test/codex",
+          config: { notes: "start", instructions: "Be brief." },
+        }),
+      );
+    } finally {
+      finish(false);
+    }
+  });
+
+  it("gives way to today's form when nothing recommended is ready", async () => {
+    codexReady = false;
+    const unready = harness("goose", "Goose", () => false);
+    const { dialog } = setup([echo, unready, codex]);
+    await waitFor(() =>
+      expect(
+        within(dialog).queryByRole("radio", {
+          name: "Automatic (Recommended)",
+        }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(unready.recommends).toHaveBeenCalled();
+    expect(harnessSelect(dialog)).toHaveTextContent("Echo");
+    expect(within(dialog).queryByText("AI settings")).not.toBeInTheDocument();
+  });
+
+  it("is absent in builds without a recommendation", async () => {
+    vi.stubEnv("VITE_BUZZ_RECOMMENDED_AGENT", "");
+    const { agents, dialog, user } = setup([echo, goose, codex]);
+    expect(within(dialog).queryByRole("radio")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("AI settings")).not.toBeInTheDocument();
+    expect(harnessSelect(dialog)).toHaveTextContent("Echo");
+    expect(createButton()).toBeEnabled();
+    expect(goose.recommends).not.toHaveBeenCalled();
+    await user.type(within(dialog).getByLabelText("Name"), "Agent A");
+    await user.click(createButton());
+    expect(agents.create).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "test/echo", config: { reply: "" } }),
+    );
+  });
 });
