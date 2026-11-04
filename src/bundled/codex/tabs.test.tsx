@@ -1881,18 +1881,16 @@ describe("Recommended", () => {
       />,
     );
     const user = userEvent.setup();
-    const choice = screen.getByRole("combobox", { name: "Model settings" });
-    expect(choice).toHaveTextContent("Automatic (Recommended)");
     expect(
-      await screen.findByText(
-        "Currently Codex · Model B · Medium thinking. Buzz keeps it up to date.",
-      ),
+      screen.getByRole("radio", { name: "Automatic (Recommended)" }),
+    ).toBeChecked();
+    expect(
+      await screen.findByText("Currently: Codex · Model B · Medium thinking"),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("combobox", { name: "Thinking" }),
     ).not.toBeInTheDocument();
-    await user.click(choice);
-    await user.click(await screen.findByRole("option", { name: "Custom" }));
+    await user.click(screen.getByRole("radio", { name: "Choose manually" }));
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(save).toHaveBeenCalled());
     expect(save).toHaveBeenCalledWith({

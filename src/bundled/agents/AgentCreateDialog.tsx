@@ -1,10 +1,10 @@
 // Avatar selection above the agent identity and type-owned setup fields.
 import { useEffect, useId, useRef, useState } from "react";
 import { randomAgentAvatar } from "../../features/agents/avatar-packs";
+import { AISettings, currentLine } from "../../features/agents/AISettings";
 import {
   pickRecommended,
   recommendedCandidates,
-  recommendedSummary,
   type RecommendedPick,
   withRecommended,
 } from "../../features/agents/recommended";
@@ -19,7 +19,6 @@ import type {
 import { RobotIcon } from "../../shared/design-system/icons";
 import { Button } from "../../shared/design-system/ui/Button";
 import { Dialog } from "../../shared/design-system/ui/Dialog";
-import { Radio, RadioGroup } from "../../shared/design-system/ui/RadioGroup";
 import { Select } from "../../shared/design-system/ui/Select";
 import { AgentAvatarPicker, type AvatarSelection } from "./AgentAvatarPicker";
 import styles from "./AgentCreate.module.css";
@@ -239,6 +238,47 @@ export function AgentCreateDialog({
       setPending(false);
     }
   };
+  const manualSettings = (
+    <SettingsGroup>
+      <PreferenceRow
+        title="Harness"
+        trailing={
+          <Select
+            label="Harness"
+            variant="compact"
+            align="end"
+            value={type?.key ?? ""}
+            leading={<TypeIcon type={type} size={20} />}
+            disabled={pending || types.length < 2}
+            groups={[
+              {
+                label: "",
+                options: types.map((item) => ({
+                  value: item.key,
+                  leading: <TypeIcon type={item} size={20} />,
+                  label: item.remote ? `${item.title} (hosted)` : item.title,
+                })),
+              },
+            ]}
+            onValueChange={choose}
+          />
+        }
+      />
+      {Model && (
+        <PreferenceRow
+          title="Model"
+          trailing={
+            <Model
+              key={type.key}
+              config={config}
+              disabled={pending}
+              onChange={(next) => chooseModel(type, next)}
+            />
+          }
+        />
+      )}
+    </SettingsGroup>
+  );
   return (
     <Dialog
       open={open}
@@ -336,91 +376,24 @@ export function AgentCreateDialog({
           </div>
           <section
             aria-label="AI configuration"
-            className={`${styles.configuration} grid gap-3`}
+            className={styles.configuration}
           >
-            {offered && (
-              <Field label="AI settings" nativeLabel={false}>
-                <RadioGroup
-                  aria-label="AI settings"
-                  value={automatic ? "automatic" : "manual"}
-                  disabled={pending}
-                  onValueChange={(value) =>
-                    chooseAutomatic(value === "automatic")
-                  }
-                >
-                  <Radio
-                    value="automatic"
-                    variant="card"
-                    label="Automatic (Recommended)"
-                    description={
-                      <>
-                        We choose a general-purpose harness and model that
-                        balance intelligence and cost, and keep it up to date
-                        for you.
-                        <span className="block">
-                          {pick
-                            ? `Currently: ${recommendedSummary(pick.type.title, pick.candidate)}`
-                            : "Checking this computer…"}
-                        </span>
-                        {pick?.skipped.length ? (
-                          <span className="block">
-                            {`${pick.skipped.map((item) => item.title).join(" and ")} can’t run a recommended model on this computer, so Buzz is using ${pick.type.title}.`}
-                          </span>
-                        ) : null}
-                      </>
-                    }
-                  />
-                  <Radio
-                    value="manual"
-                    variant="card"
-                    label="Choose manually"
-                    description="Pick the harness, model and thinking level yourself."
-                  />
-                </RadioGroup>
-              </Field>
-            )}
-            {!automatic && (
-              <SettingsGroup>
-                <PreferenceRow
-                  title="Harness"
-                  trailing={
-                    <Select
-                      label="Harness"
-                      variant="compact"
-                      align="end"
-                      value={type?.key ?? ""}
-                      leading={<TypeIcon type={type} size={20} />}
-                      disabled={pending || types.length < 2}
-                      groups={[
-                        {
-                          label: "",
-                          options: types.map((item) => ({
-                            value: item.key,
-                            leading: <TypeIcon type={item} size={20} />,
-                            label: item.remote
-                              ? `${item.title} (hosted)`
-                              : item.title,
-                          })),
-                        },
-                      ]}
-                      onValueChange={choose}
-                    />
-                  }
-                />
-                {Model && (
-                  <PreferenceRow
-                    title="Model"
-                    trailing={
-                      <Model
-                        key={type.key}
-                        config={config}
-                        disabled={pending}
-                        onChange={(next) => chooseModel(type, next)}
-                      />
-                    }
-                  />
-                )}
-              </SettingsGroup>
+            {offered ? (
+              <AISettings
+                automatic={automatic}
+                disabled={pending}
+                onChange={chooseAutomatic}
+                lines={[
+                  currentLine(pick?.type.title ?? "", pick?.candidate),
+                  pick?.skipped.length
+                    ? `${pick.skipped.map((item) => item.title).join(" and ")} can’t run a recommended model on this computer, so Buzz is using ${pick.type.title}.`
+                    : undefined,
+                ]}
+              >
+                {manualSettings}
+              </AISettings>
+            ) : (
+              manualSettings
             )}
           </section>
           {Create ? (

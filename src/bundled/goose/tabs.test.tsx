@@ -1421,20 +1421,22 @@ describe("Recommended", () => {
       ...DEFAULT_CONFIG,
       preset: "recommended",
     } as Config);
-    const choice = screen.getByRole("combobox", { name: "Model settings" });
-    expect(choice).toHaveTextContent("Automatic (Recommended)");
+    expect(
+      screen.getByRole("radio", { name: "Automatic (Recommended)" }),
+    ).toBeChecked();
     // It says what it found once goose has listed the model.
     expect(
-      await screen.findByText(
-        "Currently Goose · Model B · High thinking. Buzz keeps it up to date.",
-      ),
+      await screen.findByText("Currently: Goose · Model B · High thinking"),
     ).toBeInTheDocument();
+    // The harness row waits for manual; this control never retypes.
+    expect(
+      screen.queryByRole("combobox", { name: "Provider" }),
+    ).not.toBeInTheDocument();
     // Recommended owns the provider, model and thinking level.
     expect(
       screen.queryByRole("combobox", { name: "Thinking" }),
     ).not.toBeInTheDocument();
-    await user.click(choice);
-    await user.click(await screen.findByRole("option", { name: "Custom" }));
+    await user.click(screen.getByRole("radio", { name: "Choose manually" }));
     expect(
       screen.getByRole("combobox", { name: "Thinking" }),
     ).toBeInTheDocument();
@@ -1457,9 +1459,11 @@ describe("Recommended", () => {
       effort: "low",
       instructions: "Be brief.",
     });
-    await user.click(screen.getByRole("combobox", { name: "Model settings" }));
+    expect(
+      screen.getByRole("radio", { name: "Choose manually" }),
+    ).toBeChecked();
     await user.click(
-      await screen.findByRole("option", { name: "Automatic (Recommended)" }),
+      screen.getByRole("radio", { name: "Automatic (Recommended)" }),
     );
     await user.click(screen.getByRole("button", { name: "Save" }));
     // Its own model settings go with it, so none contradicts the candidate.
@@ -1506,11 +1510,7 @@ describe("Recommended", () => {
 
   it("says when no recommended model is offered, so it runs on goose's default", async () => {
     settings({ ...DEFAULT_CONFIG, preset: "recommended" } as Config, []);
-    expect(
-      screen.getByText(
-        "Checking which recommended model this computer offers…",
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Checking this computer…")).toBeInTheDocument();
     expect(
       await screen.findByText(
         "No recommended model is offered here now, so it uses Goose's default.",
@@ -1527,8 +1527,8 @@ describe("Recommended", () => {
       preset: "recommended",
     } as Config);
     expect(
-      screen.getByRole("combobox", { name: "Model settings" }),
-    ).toHaveTextContent("Custom");
+      screen.getByRole("radio", { name: "Choose manually" }),
+    ).toBeChecked();
     await user.click(screen.getByRole("combobox", { name: "Provider" }));
     await user.click(
       await screen.findByRole("option", { name: /^From goose config/ }),
@@ -1557,5 +1557,39 @@ describe("Recommended", () => {
     await waitFor(() => expect(save).toHaveBeenCalled());
     expect(save.mock.calls[0]?.[0]).toMatchObject({ model: "own" });
     expect(save.mock.calls[0]?.[0]).not.toHaveProperty("preset");
+  });
+
+  it("keeps the agent's harness when another is recommended first", async () => {
+    vi.stubEnv(
+      "VITE_BUZZ_RECOMMENDED_AGENT",
+      JSON.stringify([
+        {
+          harness: "codex",
+          model: "model-a",
+          effort: "high",
+          label: "Model A",
+        },
+        candidate,
+      ]),
+    );
+    settings({ ...DEFAULT_CONFIG, preset: "recommended" } as Config);
+    expect(
+      await screen.findByText("Currently: Goose · Model B · High thinking"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "It stays on Goose; choose manually to change its harness.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows today's settings in a build without a recommendation", () => {
+    vi.stubEnv("VITE_BUZZ_RECOMMENDED_AGENT", "");
+    settings({ ...DEFAULT_CONFIG, preset: "recommended" } as Config);
+    expect(screen.queryByRole("radio")).not.toBeInTheDocument();
+    expect(screen.queryByText("AI settings")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "Provider" }),
+    ).toBeInTheDocument();
   });
 });

@@ -120,10 +120,13 @@ With it set:
   runs on the harness's own default instead of failing; when a failed check
   caused that, goose checks again a minute later. A later build's
   recommendation reaches it the same way.
-- Settings' **Model settings** shows what it runs on, or that it fell back to
-  the harness default. Any model, provider or thinking change, on the agent's
-  card or in Settings, takes it off Recommended; **Model settings** puts it
-  back.
+- The agent's **Identity** settings show the same **AI settings** choice.
+  Automatic shows what it runs on, or that it fell back to the harness
+  default; it keeps the agent's harness even when another is recommended
+  first, and never changes it. **Choose manually** shows the Harness row and
+  the harness's model controls; changing the harness there is the usual
+  harness change. Any model, provider or thinking change, on the agent's card
+  or in Settings, takes it off Recommended.
 
 The mark stays in this computer's agent state and is never written to the
 agent's synced `buzz.agent.settings` (kind 45010), because older app versions

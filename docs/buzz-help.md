@@ -329,9 +329,10 @@ available rather than silently discarding it.
   picks the first recommended harness that is set up on this computer, with its
   model and thinking level, and keeps those current in later versions. It never
   changes the harness afterwards. If no recommended model is offered when the
-  agent runs, it uses the harness's default. **Settings → Model settings** shows
-  what it runs on. Changing the model, provider or thinking level turns
-  Automatic off; **Model settings** turns it back on. Builds without a
+  agent runs, it uses the harness's default. The agent's **AI settings**, under
+  **Identity**, show what it runs on and switch between Automatic and **Choose
+  manually**; choosing Automatic there keeps the agent's harness. Changing the
+  model, provider or thinking level turns Automatic off. Builds without a
   recommendation show none of this.
 - An agent's name and picture identify it. Instructions shape its response
   style, tasks, initiative, and boundaries. They do not add tools, credentials,

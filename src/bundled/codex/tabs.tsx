@@ -22,7 +22,11 @@ import { ActivityTranscript } from "../../features/agents/ActivityTranscript";
 import { AgentInstructions } from "../../features/agents/AgentInstructions";
 import { CreateModelChoices } from "../../features/agents/CreateModelChoices";
 import { ModelPicker } from "../../features/agents/ModelPicker";
-import { RecommendedSetting } from "../../features/agents/RecommendedSetting";
+import {
+  AISettings,
+  currentLine,
+  keptHarnessLine,
+} from "../../features/agents/AISettings";
 import {
   candidatesFor,
   followRecommended,
@@ -1183,16 +1187,16 @@ export function createTabs(
         )}
         {settingsSection !== "runtime" && (
           <>
-            <SettingsGroup>
-              {settingsHost?.typeControl?.(configChanged)}
-              <RecommendedSetting
-                harness="codex"
-                title="Codex"
-                on={following}
-                resolved={resolved}
+            {candidatesFor("codex").length ? (
+              <AISettings
+                automatic={following}
                 disabled={saving}
+                lines={[
+                  currentLine("Codex", resolved),
+                  keptHarnessLine("codex", "Codex"),
+                ]}
                 onChange={(on) =>
-                  // Custom starts from the recommendation it ran on.
+                  // Manual starts from the recommendation it ran on.
                   setDraft(
                     on
                       ? readConfig(withRecommended(draft))
@@ -1201,9 +1205,18 @@ export function createTabs(
                         ),
                   )
                 }
-              />
-              {!following && customization}
-            </SettingsGroup>
+              >
+                <SettingsGroup>
+                  {settingsHost?.typeControl?.(configChanged)}
+                  {customization}
+                </SettingsGroup>
+              </AISettings>
+            ) : (
+              <SettingsGroup>
+                {settingsHost?.typeControl?.(configChanged)}
+                {customization}
+              </SettingsGroup>
+            )}
             <AgentInstructions
               value={draft.instructions}
               disabled={saving}
