@@ -8,7 +8,7 @@
 // The build config parses candidates too, so this module imports nothing.
 
 export type RecommendedCandidate = Readonly<{
-  /** The agent type's id: `codex` or `goose`. */
+  /** The agent type's id: `codex`, `goose` or `claude-code`. */
   harness: string;
   /** goose's provider; Codex takes none. */
   provider?: string;
@@ -23,6 +23,7 @@ export const PRESET = "recommended";
 const HARNESSES: Readonly<Record<string, boolean>> = {
   codex: false,
   goose: true,
+  "claude-code": false,
 };
 
 const filled = (value: unknown): value is string =>
@@ -35,7 +36,7 @@ export function parseRecommended(
 ): readonly RecommendedCandidate[] {
   if (!value.trim()) return [];
   const invalid = new Error(
-    "BUZZ_RECOMMENDED_AGENT must be a JSON array of {harness, provider, model, effort, label} candidates: codex (no provider) or goose (with one).",
+    "BUZZ_RECOMMENDED_AGENT must be a JSON array of {harness, provider, model, effort, label} candidates: codex or claude-code (no provider), or goose (with one).",
   );
   let list: unknown;
   try {
@@ -244,7 +245,7 @@ export type RecommendedPick<T extends Harness = RegisteredType> = Readonly<{
 type RegisteredType = import("./service").RegisteredAgentType;
 
 /** The first candidate this computer can run now: its harness is installed
- * here (Codex is not on Windows), follows Recommended, and says, within
+ * here (Codex and Claude Code are not on Windows), follows Recommended, and says, within
  * `CHECK_MS`, that it is ready and offers the candidate's model. Undefined
  * when none is. */
 export async function pickRecommended<T extends Harness>(

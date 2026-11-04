@@ -65,6 +65,9 @@ it("parses candidates in order, several per harness, and rejects anything else",
     backup,
   ]);
   expect(parseRecommended("  ")).toEqual([]);
+  // Claude Code takes a candidate too, without a provider.
+  const claude = { ...CODEX, harness: "claude-code", label: "Model D" };
+  expect(parseRecommended(JSON.stringify([claude]))).toEqual([claude]);
   for (const invalid of [
     "[]",
     "{}",
@@ -74,6 +77,7 @@ it("parses candidates in order, several per harness, and rejects anything else",
     JSON.stringify([{ ...GOOSE, harness: "pi" }]),
     JSON.stringify([{ ...CODEX, label: "" }]),
     JSON.stringify([{ ...CODEX, extra: "x" }]),
+    JSON.stringify([{ ...CODEX, harness: "claude-code", provider: "p" }]),
   ])
     expect(() => parseRecommended(invalid)).toThrow(/BUZZ_RECOMMENDED_AGENT/);
 });

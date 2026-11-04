@@ -88,12 +88,12 @@ builds.
 Packagers can offer a recommended agent setup, which picks a harness, model and
 thinking level for new agents and keeps them current. `BUZZ_RECOMMENDED_AGENT`
 is a JSON array of candidates, best first; a harness may have several. Each
-one has `harness` (`codex` or `goose`), `model`, `effort`, `label` (the model's
+one has `harness` (`goose`, `codex` or `claude-code`), `model`, `effort`, `label` (the model's
 display name) and, for goose only, `provider`. For example, with placeholder
 values:
 
 ```sh
-BUZZ_RECOMMENDED_AGENT='[{"harness":"codex","model":"model-a","effort":"high","label":"Model A"},{"harness":"goose","provider":"example","model":"model-b","effort":"high","label":"Model B"}]' bin/pnpm tauri build
+BUZZ_RECOMMENDED_AGENT='[{"harness":"goose","provider":"example","model":"model-b","effort":"high","label":"Model B"},{"harness":"codex","model":"model-a","effort":"high","label":"Model A"},{"harness":"claude-code","model":"model-c","effort":"high","label":"Model C"}]' bin/pnpm tauri build
 ```
 
 The frontend reads it from repository-root `.env.local` or the process
@@ -107,9 +107,11 @@ With it set:
   default, or **Choose manually**, which shows today's harness and model
   pickers. Automatic uses the first candidate whose harness is installed here
   and ready and whose model it lists now (Codex: installed, signed in, model
-  in its catalog; goose: provider set up, model in its live list with the
-  candidate's thinking level). Each check may take up to 8 seconds; one that
-  fails or takes longer skips that candidate. Codex is not offered on Windows.
+  in its catalog; Claude Code: installed, signed in, model or the model an
+  alias stands for in its catalog, with the candidate's thinking level; goose:
+  provider set up, model in its live list with the candidate's thinking
+  level). Each check may take up to 8 seconds; one that fails or takes longer
+  skips that candidate. Codex and Claude Code are not offered on Windows.
   When nothing is ready, AI settings is hidden and the form is as before.
   **Choose manually** works while the check runs.
 - The agent saves only `preset: "recommended"` in its config, with its own
