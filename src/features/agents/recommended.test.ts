@@ -278,3 +278,40 @@ it("keeps a finding that found nothing offered, and survives a failing listener"
     vi.useRealTimers();
   }
 });
+
+it("names the candidate and field a build rejects, never their values", () => {
+  for (const [list, message] of [
+    ["nope", "BUZZ_RECOMMENDED_AGENT must be a JSON array"],
+    [[GOOSE, "secret-text"], "BUZZ_RECOMMENDED_AGENT[1] must be an object."],
+    [
+      [GOOSE, { ...CODEX, harness: "secret-harness" }],
+      "BUZZ_RECOMMENDED_AGENT[1].harness must be goose, codex or claude-code.",
+    ],
+    [
+      [{ ...GOOSE, model: " secret-model " }],
+      "BUZZ_RECOMMENDED_AGENT[0].model must be text without surrounding spaces.",
+    ],
+    [
+      [{ ...GOOSE, provider: "" }],
+      "BUZZ_RECOMMENDED_AGENT[0].provider must be text without surrounding spaces.",
+    ],
+    [
+      [CODEX, { ...CODEX, provider: "secret-provider" }],
+      "BUZZ_RECOMMENDED_AGENT[1].provider is only for goose.",
+    ],
+    [
+      [{ ...CODEX, extra: "secret-value" }],
+      'BUZZ_RECOMMENDED_AGENT[0] has an unknown field, "extra".',
+    ],
+  ] as const) {
+    const text = typeof list === "string" ? list : JSON.stringify(list);
+    let thrown = "";
+    try {
+      parseRecommended(text);
+    } catch (error) {
+      thrown = String((error as Error).message);
+    }
+    expect(thrown).toContain(message);
+    expect(thrown).not.toMatch(/secret/);
+  }
+});

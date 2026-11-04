@@ -97,7 +97,9 @@ BUZZ_RECOMMENDED_AGENT='[{"harness":"goose","provider":"example","model":"model-
 ```
 
 The frontend reads it from repository-root `.env.local` or the process
-environment (process wins) and compiles it in; invalid values fail the build.
+environment (process wins) and compiles it in; invalid values fail the build,
+naming the candidate and field at fault, such as
+`BUZZ_RECOMMENDED_AGENT[1].model`, without echoing values.
 Set it in `.env.local` to try the feature in `just web` or `just desktop`.
 Leave it unset for OSS builds: the create form then works as before.
 

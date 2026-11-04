@@ -30,23 +30,28 @@ const filled = (value: unknown): value is string =>
   typeof value === "string" && value.trim() === value && value !== "";
 
 /** The candidates in `value`, a JSON array; empty for an empty value. Throws
- * on anything else, naming the setting but not echoing it. */
+ * on anything else, naming the setting, and the candidate and field at fault,
+ * but never echoing a value. */
 export function parseRecommended(
   value: string,
 ): readonly RecommendedCandidate[] {
   if (!value.trim()) return [];
-  const invalid = new Error(
-    "BUZZ_RECOMMENDED_AGENT must be a JSON array of {harness, provider, model, effort, label} candidates: codex or claude-code (no provider), or goose (with one).",
-  );
+  const invalid = (problem: string) =>
+    new Error(`BUZZ_RECOMMENDED_AGENT${problem}`);
   let list: unknown;
   try {
     list = JSON.parse(value);
   } catch {
-    throw invalid;
+    list = undefined;
   }
-  if (!Array.isArray(list) || !list.length) throw invalid;
-  return list.map((item: unknown) => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) throw invalid;
+  if (!Array.isArray(list) || !list.length)
+    throw invalid(
+      " must be a JSON array of {harness, provider, model, effort, label} candidates.",
+    );
+  return list.map((item: unknown, index) => {
+    const at = `[${index}]`;
+    if (!item || typeof item !== "object" || Array.isArray(item))
+      throw invalid(`${at} must be an object.`);
     const { harness, provider, model, effort, label, ...rest } = item as Record<
       string,
       unknown
@@ -55,21 +60,26 @@ export function parseRecommended(
       typeof harness === "string" && Object.hasOwn(HARNESSES, harness)
         ? HARNESSES[harness]
         : undefined;
-    if (
-      needsProvider === undefined ||
-      Object.keys(rest).length ||
-      !filled(model) ||
-      !filled(effort) ||
-      !filled(label) ||
-      (needsProvider ? !filled(provider) : provider !== undefined)
-    )
-      throw invalid;
+    if (needsProvider === undefined)
+      throw invalid(`${at}.harness must be goose, codex or claude-code.`);
+    const [unknown] = Object.keys(rest);
+    if (unknown !== undefined)
+      throw invalid(`${at} has an unknown field, "${unknown}".`);
+    for (const [name, field] of Object.entries({ model, effort, label }))
+      if (!filled(field))
+        throw invalid(`${at}.${name} must be text without surrounding spaces.`);
+    if (needsProvider ? !filled(provider) : provider !== undefined)
+      throw invalid(
+        needsProvider
+          ? `${at}.provider must be text without surrounding spaces.`
+          : `${at}.provider is only for goose.`,
+      );
     return Object.freeze({
       harness: harness as string,
       ...(needsProvider ? { provider: provider as string } : {}),
-      model,
-      effort,
-      label,
+      model: model as string,
+      effort: effort as string,
+      label: label as string,
     });
   });
 }

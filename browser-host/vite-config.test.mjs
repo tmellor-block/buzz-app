@@ -181,6 +181,12 @@ it("loads the broker's Vite config without native-compatibility warnings", () =>
                 /BUZZ_RECOMMENDED_AGENT/,
               );
             }
+            // The build names the candidate and field at fault, not their values.
+            process.env.BUZZ_RECOMMENDED_AGENT = '[{"harness":"codex","model":"m","effort":"high","label":"M"},{"harness":"codex","model":"","effort":"secret","label":"M"}]';
+            await assert.rejects(
+              loadConfigFromFile({ command: 'build', mode: 'production' }, configFile),
+              error => String(error).includes('BUZZ_RECOMMENDED_AGENT[1].model') && !String(error).includes('secret'),
+            );
             delete process.env.BUZZ_RECOMMENDED_AGENT;
             // A fresh checkout uses production for both dev and packaged frontends.
             // Explicit empty values retain the deployment opt-out.
