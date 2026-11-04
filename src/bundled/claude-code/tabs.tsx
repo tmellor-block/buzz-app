@@ -1,3 +1,17 @@
+import {
+  AISettings,
+  currentLine,
+  keptHarnessLine,
+} from "../../features/agents/AISettings";
+import {
+  candidatesFor,
+  followRecommended,
+  offRecommended,
+  onRecommended,
+  type RecommendedRun,
+  recommendedRun,
+  withRecommended,
+} from "../../features/agents/recommended";
 import { ModelDiscoveryRecovery } from "../../features/agents/ModelDiscoveryRecovery";
 import activityStyles from "../../features/agents/ActivityLayout.module.css";
 import { formatItemTimestamp } from "../../shared/datetime";
@@ -324,11 +338,27 @@ export function createTabs({
   setup,
   defaults,
   runtime,
+  recommended = recommendedRun("claude-code", (candidate) =>
+    setup.offers(candidate),
+  ),
 }: Readonly<{
   setup: ClaudeSetup;
   defaults: ClaudeDefaults;
   runtime: ClaudeRuntime;
+  /** What agents on Recommended run on; the plugin shares its runtime's. */
+  recommended?: RecommendedRun;
 }>) {
+  /** What an agent on Recommended runs on, found once it is shown on it. */
+  function useRecommended(on: boolean) {
+    const resolved = useSyncExternalStore(
+      recommended.subscribe,
+      recommended.current,
+    );
+    useEffect(() => {
+      if (on) void recommended.find();
+    }, [on]);
+    return resolved;
+  }
   function useSetupCatalog() {
     const state = useSyncExternalStore(
       setup.subscribe,
@@ -355,7 +385,11 @@ export function createTabs({
     onChange,
     ...props
   }: AgentCreateProps<Config>) {
-    const current = readConfig(config);
+    // A pick here takes the agent off Recommended, from what it runs on.
+    const resolved = useRecommended(onRecommended(config));
+    const current = offRecommended(
+      followRecommended(config, readConfig(config), resolved),
+    );
     const state = useSetupCatalog();
     const providerDefaults = useSyncExternalStore(
       defaults.subscribe,
@@ -956,10 +990,13 @@ export function createTabs({
       setSaving(true);
       setError("");
       try {
-        await save({
+        const next = {
           ...draft,
           workspace: draft.workspace.trim() || "~/.buzz",
-        });
+        };
+        // A Custom agent's save drops a mark left from before, which a later
+        // blank synced model would otherwise turn back on.
+        await save(onRecommended(next) ? next : offRecommended(next));
       } catch (reason) {
         setError(message(reason));
       } finally {
@@ -1008,15 +1045,18 @@ export function createTabs({
               model || providerDefaults.model,
               setupState.models,
             );
-            setDraft({
-              ...draft,
-              model,
-              effort:
-                setupState.models.length === 0 ||
-                next.some((level) => level.id === draft.effort)
-                  ? draft.effort
-                  : "",
-            });
+            // A manual choice, even of the default, is never Recommended.
+            setDraft(
+              offRecommended({
+                ...draft,
+                model,
+                effort:
+                  setupState.models.length === 0 ||
+                  next.some((level) => level.id === draft.effort)
+                    ? draft.effort
+                    : "",
+              }),
+            );
           }}
         />
         <Select
@@ -1026,9 +1066,21 @@ export function createTabs({
           variant="preference"
           value={draft.effort}
           groups={[{ label: "", options: effortOptions }]}
-          onValueChange={(effort) => setDraft({ ...draft, effort })}
+          onValueChange={(effort) =>
+            setDraft(offRecommended({ ...draft, effort }))
+          }
         />
       </>
+    );
+    // Inert in a build that recommends nothing for Claude.
+    const following =
+      onRecommended(draft) && candidatesFor("claude-code").length > 0;
+    const resolved = useRecommended(following);
+    const manual = (
+      <SettingsGroup>
+        {settingsHost?.typeControl?.(configChanged)}
+        {modelControl}
+      </SettingsGroup>
     );
     return (
       <form
@@ -1051,10 +1103,29 @@ export function createTabs({
         )}
         {settingsSection !== "runtime" && (
           <>
-            <SettingsGroup>
-              {settingsHost?.typeControl?.(configChanged)}
-              {modelControl}
-            </SettingsGroup>
+            {candidatesFor("claude-code").length ? (
+              <AISettings
+                automatic={following}
+                lines={[
+                  currentLine("Claude", resolved),
+                  keptHarnessLine("claude-code", "Claude"),
+                ]}
+                onChange={(on) =>
+                  // Manual starts from the recommendation it ran on.
+                  setDraft(
+                    on
+                      ? readConfig(withRecommended(draft))
+                      : offRecommended(
+                          followRecommended(draft, draft, resolved),
+                        ),
+                  )
+                }
+              >
+                {manual}
+              </AISettings>
+            ) : (
+              manual
+            )}
             <AgentInstructions
               value={draft.instructions}
               disabled={false}
