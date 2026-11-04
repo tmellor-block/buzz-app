@@ -155,6 +155,14 @@ export function followRecommended<
   };
 }
 
+const level = (effort: string) =>
+  `${effort.charAt(0).toUpperCase()}${effort.slice(1)}`;
+/** e.g. `Codex · Model A · High thinking`. */
+export const recommendedSummary = (
+  title: string,
+  candidate: RecommendedCandidate,
+) => `${title} · ${candidate.label} · ${level(candidate.effort)} thinking`;
+
 /** How long one harness may take to say whether it can run a candidate. */
 export const CHECK_MS = 8_000;
 /** How long a launch keeps a finding that a failed check cut short. */
@@ -170,6 +178,8 @@ const checked = (check: Promise<boolean> | undefined) =>
     };
     (check ?? Promise.resolve(false)).then(done, () => done("failed"));
   });
+const bounded = async (check: Promise<boolean> | undefined) =>
+  (await checked(check)) === true;
 
 /** What one harness's agents on Recommended run on, found once per launch. */
 export type RecommendedRun = Readonly<{
@@ -227,4 +237,43 @@ export function recommendedRun(
       };
     },
   };
+}
+
+/** The agent type fields a pick reads. */
+type Harness = Readonly<{
+  id: string;
+  remote?: unknown;
+  recommends?(candidate: RecommendedCandidate): Promise<boolean>;
+}>;
+export type RecommendedPick<T extends Harness = RegisteredType> = Readonly<{
+  type: T;
+  candidate: RecommendedCandidate;
+  /** Other installed harnesses ahead of it that aren't ready here. */
+  skipped: readonly T[];
+}>;
+type RegisteredType = import("./service").RegisteredAgentType;
+
+/** The first candidate this computer can run now: its harness is installed
+ * here (Codex is not on Windows), follows Recommended, and says, within
+ * `CHECK_MS`, that it is ready and offers the candidate's model. Undefined
+ * when none is. */
+export async function pickRecommended<T extends Harness>(
+  types: readonly T[],
+): Promise<RecommendedPick<T> | undefined> {
+  const skipped: T[] = [];
+  for (const candidate of recommendedCandidates()) {
+    const type = types.find(
+      (item) =>
+        item.id === candidate.harness && item.recommends && !item.remote,
+    );
+    if (!type) continue;
+    if (await bounded(type.recommends?.(candidate)))
+      return {
+        type,
+        candidate,
+        skipped: skipped.filter((item) => item !== type),
+      };
+    if (!skipped.includes(type)) skipped.push(type);
+  }
+  return undefined;
 }

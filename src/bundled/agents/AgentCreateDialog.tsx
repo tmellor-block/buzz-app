@@ -1,6 +1,13 @@
 // Avatar selection above the agent identity and type-owned setup fields.
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { randomAgentAvatar } from "../../features/agents/avatar-packs";
+import { AISettings, currentLine } from "../../features/agents/AISettings";
+import {
+  pickRecommended,
+  recommendedCandidates,
+  type RecommendedPick,
+  withRecommended,
+} from "../../features/agents/recommended";
 import type {
   Agent,
   Agents,
@@ -121,6 +128,25 @@ export function AgentCreateDialog({
       : config;
   };
   const [config, setConfig] = useState(() => seed(type));
+  // A new agent starts on Recommended when this build has candidates and
+  // this computer can run one; until that is known, the choice waits.
+  const recommendable =
+    !update && !request && recommendedCandidates().length > 0;
+  const [automatic, setAutomatic] = useState(recommendable);
+  const [pick, setPick] = useState<RecommendedPick | null | undefined>(
+    recommendable ? undefined : null,
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Read once, as the dialog opens.
+  useEffect(() => {
+    if (!recommendable) return;
+    let current = true;
+    void pickRecommended(types).then((found) => {
+      if (current) setPick(found ?? null);
+    });
+    return () => {
+      current = false;
+    };
+  }, []);
   const preview = migration(type);
   const [dirty, setDirty] = useState(Boolean(update));
   const [pending, setPending] = useState(false);
@@ -141,21 +167,47 @@ export function AgentCreateDialog({
     setDirty(true);
     setError("");
   };
-  const choose = (key: string) => {
-    const item = types.find((candidate) => candidate.key === key);
-    if (!item || key === type?.key) return;
+  /** `item`'s config for the agent, with what the owner has typed. */
+  const carried = (item: RegisteredAgentType) => {
     const next = seed(item);
     // Typed instructions follow a new agent to its new harness.
     const instructions = update
       ? undefined
       : type?.carry?.(config).instructions;
-    chooseModel(
-      item,
-      instructions && item.adopt ? item.adopt({ instructions }, next) : next,
-    );
+    return instructions && item.adopt
+      ? item.adopt({ instructions }, next)
+      : next;
   };
+  // Once known, Recommended takes its harness, or gives way to today's choice.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Follows only the pick.
+  useEffect(() => {
+    if (pick === undefined || !automatic) return;
+    if (!pick) setAutomatic(false);
+    else if (pick.type.key !== type?.key) {
+      setTypeKey(pick.type.key);
+      setConfig(carried(pick.type));
+    }
+  }, [pick]);
+  const choose = (key: string) => {
+    const item = types.find((candidate) => candidate.key === key);
+    if (!item || key === type?.key) return;
+    chooseModel(item, carried(item));
+  };
+  /** Automatic, or the harness and model chosen manually. */
+  const chooseAutomatic = (on: boolean) => {
+    if (on === automatic) return;
+    setAutomatic(on);
+    setDirty(true);
+    setError("");
+    // While the pick runs, its effect takes the harness once known.
+    if (on && pick && pick.type.key !== type?.key)
+      chooseModel(pick.type, carried(pick.type));
+  };
+  const checking = automatic && pick === undefined;
+  // Offered while the pick runs, and once it found a candidate.
+  const offered = recommendable && pick !== null;
   const create = async () => {
-    if (!type || pending || avatarBusy) return;
+    if (!type || pending || avatarBusy || checking) return;
     if (!name.trim()) {
       namePrompt.prompt();
       return;
@@ -170,7 +222,14 @@ export function AgentCreateDialog({
         type: type.key,
         name: name.trim(),
         ...(picture ? { picture } : {}),
-        ...(config !== undefined ? { config } : {}),
+        ...(config !== undefined
+          ? {
+              config:
+                automatic && pick?.type.key === type.key
+                  ? withRecommended(config as object)
+                  : config,
+            }
+          : {}),
       };
       if (update) await update.onSave(input);
       else onCreated(await (onCreate ? onCreate(input) : agents.create(input)));
@@ -179,6 +238,47 @@ export function AgentCreateDialog({
       setPending(false);
     }
   };
+  const manualSettings = (
+    <SettingsGroup>
+      <PreferenceRow
+        title="Harness"
+        trailing={
+          <Select
+            label="Harness"
+            variant="compact"
+            align="end"
+            value={type?.key ?? ""}
+            leading={<TypeIcon type={type} size={20} />}
+            disabled={pending || types.length < 2}
+            groups={[
+              {
+                label: "",
+                options: types.map((item) => ({
+                  value: item.key,
+                  leading: <TypeIcon type={item} size={20} />,
+                  label: item.remote ? `${item.title} (hosted)` : item.title,
+                })),
+              },
+            ]}
+            onValueChange={choose}
+          />
+        }
+      />
+      {Model && (
+        <PreferenceRow
+          title="Model"
+          trailing={
+            <Model
+              key={type.key}
+              config={config}
+              disabled={pending}
+              onChange={(next) => chooseModel(type, next)}
+            />
+          }
+        />
+      )}
+    </SettingsGroup>
+  );
   return (
     <Dialog
       open={open}
@@ -213,7 +313,7 @@ export function AgentCreateDialog({
           type="submit"
           form={form}
           loading={pending}
-          disabled={avatarBusy || pending || !type}
+          disabled={avatarBusy || pending || !type || checking}
         >
           {update ? "Save changes" : "Create agent"}
         </Button>
@@ -278,47 +378,23 @@ export function AgentCreateDialog({
             aria-label="AI configuration"
             className={styles.configuration}
           >
-            <SettingsGroup>
-              <PreferenceRow
-                title="Harness"
-                trailing={
-                  <Select
-                    label="Harness"
-                    variant="compact"
-                    align="end"
-                    value={type?.key ?? ""}
-                    leading={<TypeIcon type={type} size={20} />}
-                    disabled={pending || types.length < 2}
-                    groups={[
-                      {
-                        label: "",
-                        options: types.map((item) => ({
-                          value: item.key,
-                          leading: <TypeIcon type={item} size={20} />,
-                          label: item.remote
-                            ? `${item.title} (hosted)`
-                            : item.title,
-                        })),
-                      },
-                    ]}
-                    onValueChange={choose}
-                  />
-                }
-              />
-              {Model && (
-                <PreferenceRow
-                  title="Model"
-                  trailing={
-                    <Model
-                      key={type.key}
-                      config={config}
-                      disabled={pending}
-                      onChange={(next) => chooseModel(type, next)}
-                    />
-                  }
-                />
-              )}
-            </SettingsGroup>
+            {offered ? (
+              <AISettings
+                automatic={automatic}
+                disabled={pending}
+                onChange={chooseAutomatic}
+                lines={[
+                  currentLine(pick?.type.title ?? "", pick?.candidate),
+                  pick?.skipped.length
+                    ? `${pick.skipped.map((item) => item.title).join(" and ")} can’t run a recommended model on this computer, so Buzz is using ${pick.type.title}.`
+                    : undefined,
+                ]}
+              >
+                {manualSettings}
+              </AISettings>
+            ) : (
+              manualSettings
+            )}
           </section>
           {Create ? (
             <Create

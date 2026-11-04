@@ -1870,4 +1870,33 @@ describe("Recommended", () => {
     await signedOut.provider.check();
     expect(signedOut.provider.recommended()).toBeNull();
   });
+
+  it("drops Recommended for a manual choice in Settings", async () => {
+    const f = fixture();
+    const save = vi.fn(async () => {});
+    const { SettingsTab } = f.tabs;
+    render(
+      <SettingsTab
+        {...f.props({ ...defaults, preset: "recommended" }, save)}
+      />,
+    );
+    const user = userEvent.setup();
+    expect(
+      screen.getByRole("radio", { name: "Automatic (Recommended)" }),
+    ).toBeChecked();
+    expect(
+      await screen.findByText("Currently: Codex · Model B · Medium thinking"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "Thinking" }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: "Choose manually" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    expect(save).toHaveBeenCalledWith({
+      ...defaults,
+      model: "model-b",
+      effort: "medium",
+    });
+  });
 });

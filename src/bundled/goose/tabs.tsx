@@ -14,10 +14,17 @@ import { ActivityTranscript } from "../../features/agents/ActivityTranscript";
 import { AgentSaveButton } from "../../features/agents/AgentSaveButton";
 import { AgentInstructions } from "../../features/agents/AgentInstructions";
 import {
+  AISettings,
+  currentLine,
+  keptHarnessLine,
+} from "../../features/agents/AISettings";
+import {
+  candidatesFor,
   offRecommended,
   onRecommended,
   type RecommendedRun,
   recommendedRun,
+  withRecommended,
 } from "../../features/agents/recommended";
 import {
   type ModelChoice,
@@ -1239,7 +1246,9 @@ export function createTabs({
     }, [error]);
     const configChanged = JSON.stringify(draft) !== JSON.stringify(saved);
     const changed = configChanged || Boolean(settingsHost?.pendingSave);
-    const resolved = useRecommended(onRecommended(draft));
+    // Inert in a build that recommends nothing for goose.
+    const following = onRecommended(draft) && candidatesFor("goose").length > 0;
+    const resolved = useRecommended(following);
     const manual = (
       <SettingsGroup>
         {settingsHost?.typeControl?.(configChanged)}
@@ -1298,7 +1307,27 @@ export function createTabs({
         )}
         {settingsSection !== "runtime" && (
           <>
-            {manual}
+            {candidatesFor("goose").length ? (
+              <AISettings
+                automatic={following}
+                lines={[
+                  currentLine("Goose", resolved),
+                  keptHarnessLine("goose", "Goose"),
+                ]}
+                onChange={(on) =>
+                  // Manual starts from the recommendation it ran on.
+                  setDraft(
+                    on
+                      ? readConfig(withRecommended(draft))
+                      : offRecommended(running(draft, resolved)),
+                  )
+                }
+              >
+                {manual}
+              </AISettings>
+            ) : (
+              manual
+            )}
             <AgentInstructions
               value={draft.instructions}
               disabled={false}

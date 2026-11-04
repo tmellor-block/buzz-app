@@ -23,11 +23,17 @@ import { AgentInstructions } from "../../features/agents/AgentInstructions";
 import { CreateModelChoices } from "../../features/agents/CreateModelChoices";
 import { ModelPicker } from "../../features/agents/ModelPicker";
 import {
+  AISettings,
+  currentLine,
+  keptHarnessLine,
+} from "../../features/agents/AISettings";
+import {
   candidatesFor,
   followRecommended,
   offRecommended,
   onRecommended,
   type RecommendedCandidate,
+  withRecommended,
 } from "../../features/agents/recommended";
 import {
   ConversationName,
@@ -1084,6 +1090,9 @@ export function createTabs(
     ];
     const configChanged = JSON.stringify(draft) !== JSON.stringify(saved);
     const changed = configChanged || Boolean(settingsHost?.pendingSave);
+    // Inert in a build that recommends nothing for Codex.
+    const following = onRecommended(draft) && candidatesFor("codex").length > 0;
+    const resolved = provider.recommended();
     const submit = async () => {
       setSaving(true);
       setError("");
@@ -1178,10 +1187,36 @@ export function createTabs(
         )}
         {settingsSection !== "runtime" && (
           <>
-            <SettingsGroup>
-              {settingsHost?.typeControl?.(configChanged)}
-              {customization}
-            </SettingsGroup>
+            {candidatesFor("codex").length ? (
+              <AISettings
+                automatic={following}
+                disabled={saving}
+                lines={[
+                  currentLine("Codex", resolved),
+                  keptHarnessLine("codex", "Codex"),
+                ]}
+                onChange={(on) =>
+                  // Manual starts from the recommendation it ran on.
+                  setDraft(
+                    on
+                      ? readConfig(withRecommended(draft))
+                      : offRecommended(
+                          followRecommended(draft, draft, resolved),
+                        ),
+                  )
+                }
+              >
+                <SettingsGroup>
+                  {settingsHost?.typeControl?.(configChanged)}
+                  {customization}
+                </SettingsGroup>
+              </AISettings>
+            ) : (
+              <SettingsGroup>
+                {settingsHost?.typeControl?.(configChanged)}
+                {customization}
+              </SettingsGroup>
+            )}
             <AgentInstructions
               value={draft.instructions}
               disabled={saving}
